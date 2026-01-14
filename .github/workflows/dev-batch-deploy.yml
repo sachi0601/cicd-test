@@ -174,7 +174,12 @@ jobs:
   # deploy
   # ==============================================================
   deploy:
-    needs: image-scan
+    needs: 
+      [
+        build-push,
+        image-scan
+      ]
+    
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
