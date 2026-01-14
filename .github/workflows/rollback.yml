@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 15
 
     needs: [approve]
-    # approve が成功したら実行（dev は fast-pass で success になる）
+    # approve が成功したら実行（dev は自動で success になる）
     if: ${{ needs.approve.result == 'success' }}
 
     permissions:
