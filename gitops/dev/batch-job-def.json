@@ -2,7 +2,6 @@
   "jobDefinitionName": "dev-mizuno-sv-cpi-batchjd01",
   "type": "container",
   "platformCapabilities": ["FARGATE"],
-  "schedulingPriority": 1,
   "retryStrategy": {
     "attempts": 1
   },
