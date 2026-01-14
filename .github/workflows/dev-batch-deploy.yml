@@ -119,7 +119,7 @@ jobs:
       - name: create image URI
         run: |
           # {env}-{repository_name}:<sha>-<datetime>
-          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-cpo-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> $GITHUB_ENV
+          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-mizuno-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> $GITHUB_ENV
 
       # 1. ビルド & プッシュ
       - name: build and push
