@@ -21,11 +21,17 @@ jobs:
   approve:
     name: approve (stage/prod only)
     runs-on: ubuntu-latest
-    if: ${{ inputs.environment != 'dev' }}
-    # stage/prodのEnvironmentにrequired reviewersを設定
-    environment: ${{ inputs.environment }}
     steps:
-      - run: echo "承認されました。${{ inputs.environment }}環境のロールバックを開始します。"
+      # dev は承認不要なので即成功させる
+      - name: dev fast-pass
+        if: ${{ inputs.environment == 'dev' }}
+        run: echo "dev environment: approval is skipped."
+
+      # stage/prod は Environment 承認を要求（required reviewers が効く）
+      - name: wait for approval (stage/prod)
+        if: ${{ inputs.environment != 'dev' }}
+        environment: ${{ inputs.environment }}
+        run: echo "Approved. Start rollback for ${{ inputs.environment }}."
 
   # ==============================================================
   # rollback
@@ -35,7 +41,8 @@ jobs:
     timeout-minutes: 15
 
     needs: [approve]
-    if: ${{ inputs.environment == 'dev' || needs.approve.result == 'success' }}
+    # approve が成功したら実行（dev は fast-pass で success になる）
+    if: ${{ needs.approve.result == 'success' }}
 
     permissions:
       id-token: write
