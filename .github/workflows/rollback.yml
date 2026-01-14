@@ -16,85 +16,18 @@ concurrency:
 
 jobs:
   # ==============================================================
-  # debug (必ず1個は走らせて入力を可視化)
-  # ==============================================================
-  debug:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          echo "event_name=${{ github.event_name }}"
-          echo "inputs.environment=${{ inputs.environment }}"
-          echo "github.event.inputs.environment=${{ github.event.inputs.environment }}"
-
-  # ==============================================================
-  # dev rollback (no approval)
-  # ==============================================================
-  rollback-dev:
-    if: ${{ inputs.environment == 'dev' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    permissions:
-      id-token: write
-      contents: read
-
-    env:
-      JOB_DEF_FAMILY: dev-mizuno-sv-cpi-batchjd01
-
-    steps:
-      - name: resolve oidc role arn
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROLE_ARN="${{ secrets.DEV_OIDC_ROLE_ARN }}"
-          if [ -z "$ROLE_ARN" ]; then
-            echo "ERROR: DEV_OIDC_ROLE_ARN is empty. Check secrets."
-            exit 1
-          fi
-          echo "ROLE_ARN=$ROLE_ARN" >> "$GITHUB_ENV"
-
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-1
-          role-to-assume: ${{ env.ROLE_ARN }}
-
-      - name: rollback job definition (disable latest)
-        shell: bash
-        run: |
-          set -euo pipefail
-          ARNS="$(aws batch describe-job-definitions \
-            --job-definition-name "${JOB_DEF_FAMILY}" \
-            --status ACTIVE \
-            --query 'jobDefinitions | sort_by(@, &revision) | reverse(@)[:2].jobDefinitionArn' \
-            --output text)"
-
-          COUNT="$(printf "%s" "${ARNS}" | wc -w | tr -d ' ')"
-          if [ "${COUNT}" -lt 2 ]; then
-            echo "ERROR: Less than 2 ACTIVE job definitions. Rollback not possible."
-            exit 1
-          fi
-
-          read -r LATEST_ARN PREV_ARN <<< "${ARNS}"
-          echo "Disable (latest): ${LATEST_ARN}"
-          echo "Keep (previous) : ${PREV_ARN}"
-          aws batch deregister-job-definition --job-definition "${LATEST_ARN}"
-
-  # ==============================================================
-  # stage/prod approve (Environment reviewers)
+  # approve (devは即通過 / stage・prodは承認待ち)
   # ==============================================================
   approve:
-    if: ${{ inputs.environment != 'dev' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - run: echo "Approved. Start rollback for ${{ inputs.environment }}."
+      - run: echo "Approved (or not required) for ${{ inputs.environment }}. Start rollback."
 
   # ==============================================================
-  # stage/prod rollback (after approval)
+  # rollback
   # ==============================================================
   rollback:
-    if: ${{ inputs.environment != 'dev' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [approve]
@@ -104,34 +37,39 @@ jobs:
       contents: read
 
     env:
-      JOB_DEF_FAMILY: ${{ inputs.environment }}-cpo-sv-cpi-batchj01
+      JOB_DEF_FAMILY: ${{ inputs.environment }}-mizuno-sv-cpi-batchjd01
 
     steps:
-      - name: resolve oidc role arn
+      - name: resolve oidc role arn (fixed mapping)
         shell: bash
         run: |
           set -euo pipefail
           case "${{ inputs.environment }}" in
+            dev)   ROLE_ARN="${{ secrets.DEV_OIDC_ROLE_ARN }}" ;;
             stage) ROLE_ARN="${{ secrets.STAGE_OIDC_ROLE_ARN }}" ;;
             prod)  ROLE_ARN="${{ secrets.PROD_OIDC_ROLE_ARN }}" ;;
             *) echo "Unknown environment"; exit 1 ;;
           esac
+
           if [ -z "$ROLE_ARN" ]; then
-            echo "ERROR: OIDC ROLE ARN secret is empty."
+            echo "ERROR: OIDC ROLE ARN secret is empty. Check secrets."
             exit 1
           fi
+
           echo "ROLE_ARN=$ROLE_ARN" >> "$GITHUB_ENV"
 
-      - name: configure aws credentials
+      - name: configure aws credentials (env-specific OIDC role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-northeast-1
           role-to-assume: ${{ env.ROLE_ARN }}
 
       - name: rollback job definition (disable latest)
+        id: pick
         shell: bash
         run: |
           set -euo pipefail
+
           ARNS="$(aws batch describe-job-definitions \
             --job-definition-name "${JOB_DEF_FAMILY}" \
             --status ACTIVE \
@@ -141,10 +79,21 @@ jobs:
           COUNT="$(printf "%s" "${ARNS}" | wc -w | tr -d ' ')"
           if [ "${COUNT}" -lt 2 ]; then
             echo "ERROR: Less than 2 ACTIVE job definitions. Rollback not possible."
+            echo "JobDefinitionFamily: ${JOB_DEF_FAMILY}"
             exit 1
           fi
 
           read -r LATEST_ARN PREV_ARN <<< "${ARNS}"
+
+          echo "Environment     : ${{ inputs.environment }}"
+          echo "JobDef Family   : ${JOB_DEF_FAMILY}"
           echo "Disable (latest): ${LATEST_ARN}"
           echo "Keep (previous) : ${PREV_ARN}"
+
           aws batch deregister-job-definition --job-definition "${LATEST_ARN}"
+
+          echo "latest_arn=${LATEST_ARN}"   >> "$GITHUB_OUTPUT"
+          echo "previous_arn=${PREV_ARN}" >> "$GITHUB_OUTPUT"
+
+      - name: display messages
+        run: echo "Rollback completed."
