@@ -16,7 +16,7 @@ public class DemoApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        System.out.println("Hello, World! from AWS Batch");
+        System.out.println("Hello, World! from AWS Batch riv2 ");
         System.exit(0); // ← Batchジョブ即時終了
     }
 }
