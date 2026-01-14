@@ -31,7 +31,7 @@ jobs:
   # rollback
   # ==============================================================
   rollback:
-    runs-on: toro-self-hosted-runner
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     needs: [approve]
