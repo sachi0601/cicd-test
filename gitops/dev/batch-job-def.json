@@ -1,5 +1,5 @@
 {
-  "jobDefinitionName": "dev-cpo-sv-cpi-batchce01",
+  "jobDefinitionName": "dev-mizuno-sv-cpi-batchjd01",
   "type": "container",
   "platformCapabilities": ["FARGATE"],
   "schedulingPriority": 1,
@@ -22,7 +22,7 @@
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
-        "awslogs-group": "/aws/batch/job/dev-cpo-sv-cpi-batchj01"
+        "awslogs-group": "/aws/batch/job/dev-mizuno-sv-cpi-batchj01"
       }
     },
     "fargatePlatformConfiguration": {
