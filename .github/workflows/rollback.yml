@@ -1,7 +1,7 @@
 name: AWS Batch Rollback
 run-name: Rollback ${{ inputs.environment }} by @${{ github.actor }}
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       environment:
@@ -16,33 +16,86 @@ concurrency:
 
 jobs:
   # ==============================================================
-  # approve
+  # dev rollback (no approval)
   # ==============================================================
-  approve:
-    name: approve (stage/prod only)
-    runs-on: ubuntu-latest
-    steps:
-      # dev は承認不要なので即成功させる
-      - name: dev fast-pass
-        if: ${{ inputs.environment == 'dev' }}
-        run: echo "dev environment: approval is skipped."
-
-      # stage/prod は Environment 承認を要求（required reviewers が効く）
-      - name: wait for approval (stage/prod)
-        if: ${{ inputs.environment != 'dev' }}
-        environment: ${{ inputs.environment }}
-        run: echo "Approved. Start rollback for ${{ inputs.environment }}."
-
-  # ==============================================================
-  # rollback
-  # ==============================================================
-  rollback:
+  rollback-dev:
+    if: ${{ inputs.environment == 'dev' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      JOB_DEF_FAMILY: dev-cpo-sv-cpi-batchj01
+
+    steps:
+      - name: resolve oidc role arn
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ROLE_ARN=${{ secrets.DEV_OIDC_ROLE_ARN }}" >> "$GITHUB_ENV"
+          if [ -z "${ROLE_ARN:-}" ]; then
+            echo "ERROR: ROLE_ARN is empty. Check repository secrets."
+            exit 1
+          fi
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ env.ROLE_ARN }}
+
+      - name: rollback job definition (disable latest)
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARNS="$(aws batch describe-job-definitions \
+            --job-definition-name "${JOB_DEF_FAMILY}" \
+            --status ACTIVE \
+            --query 'jobDefinitions | sort_by(@, &revision) | reverse(@)[:2].jobDefinitionArn' \
+            --output text)"
+
+          COUNT="$(printf "%s" "${ARNS}" | wc -w | tr -d ' ')"
+          if [ "${COUNT}" -lt 2 ]; then
+            echo "ERROR: Less than 2 ACTIVE job definitions. Rollback not possible."
+            echo "JobDefinitionFamily: ${JOB_DEF_FAMILY}"
+            exit 1
+          fi
+
+          read -r LATEST_ARN PREV_ARN <<< "${ARNS}"
+
+          echo "Environment     : dev"
+          echo "JobDef Family   : ${JOB_DEF_FAMILY}"
+          echo "Disable (latest): ${LATEST_ARN}"
+          echo "Keep (previous) : ${PREV_ARN}"
+
+          aws batch deregister-job-definition --job-definition "${LATEST_ARN}"
+
+      - name: display messages
+        run: echo "Rollback completed."
+
+  # ==============================================================
+  # stage/prod approve gate (Environment reviewers)
+  # ==============================================================
+  approve:
+    if: ${{ inputs.environment != 'dev' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - run: echo "Approved. Start rollback for ${{ inputs.environment }}."
+
+  # ==============================================================
+  # stage/prod rollback (after approval)
+  # ==============================================================
+  rollback:
+    if: ${{ inputs.environment != 'dev' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [approve]
-    # approve が成功したら実行（dev は自動で success になる）
-    if: ${{ needs.approve.result == 'success' }}
 
     permissions:
       id-token: write
@@ -57,10 +110,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.environment }}" in
-            dev)   echo "ROLE_ARN=${{ secrets.DEV_OIDC_ROLE_ARN }}"   >> "$GITHUB_ENV" ;;
             stage) echo "ROLE_ARN=${{ secrets.STAGE_OIDC_ROLE_ARN }}" >> "$GITHUB_ENV" ;;
             prod)  echo "ROLE_ARN=${{ secrets.PROD_OIDC_ROLE_ARN }}"  >> "$GITHUB_ENV" ;;
-            *) echo "Unknown environment"; exit 1 ;;
+            *) echo "Unknown environment (expected stage/prod)"; exit 1 ;;
           esac
 
           if [ -z "${ROLE_ARN:-}" ]; then
@@ -101,9 +153,6 @@ jobs:
           echo "Keep (previous) : ${PREV_ARN}"
 
           aws batch deregister-job-definition --job-definition "${LATEST_ARN}"
-
-          echo "latest_arn=${LATEST_ARN}"   >> "$GITHUB_OUTPUT"
-          echo "previous_arn=${PREV_ARN}" >> "$GITHUB_OUTPUT"
 
       - name: display messages
         run: echo "Rollback completed."
