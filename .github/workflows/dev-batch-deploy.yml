@@ -19,7 +19,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: springboot unit test
-  #       uses: tmc-ccoe/torocicd-actions/unit-test/springboot@v1.0.0
+  #       uses: unit-test/springboot@v1.0.0
   #       with:
   #         SOURCE_DIR: "app/springboot-sample"
   #         JDK_VERSION: "17"
@@ -27,10 +27,10 @@ jobs:
 
   # springboot-sonarqube-check:
   #   continue-on-error: true
-  #   runs-on: toro-self-hosted-runner
+  #   runs-on: ubuntu-latest
   #   steps:
   #     - name: springboot sonarqube check
-  #       uses: tmc-ccoe/torocicd-actions/code-scan/sonarqube@v1.0.10
+  #       uses: code-scan/sonarqube@v1.0.10
   #       with:
   #         SOURCE_DIR: "app/springboot-sample"
   #         SONAR_HOST_URL: ${{ vars.PROD_SONAR_HOST_URL }}
@@ -43,7 +43,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: springboot linter
-  #       uses: tmc-ccoe/torocicd-actions/lint/springboot@v1.0.0
+  #       uses: lint/springboot@v1.0.0
   #       with:
   #         SOURCE_DIR: "app/springboot-sample"
 
@@ -52,7 +52,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: springboot documentation
-  #       uses: tmc-ccoe/torocicd-actions/documentation/springboot@v1.0.0
+  #       uses: documentation/springboot@v1.0.0
   #       with:
   #         SOURCE_DIR: "app/springboot-sample"
   #         JDK_VERSION: "17"
@@ -63,7 +63,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: springboot scan license
-  #       uses: tmc-ccoe/torocicd-actions/license-check/springboot@v1.0.0
+  #       uses: license-check/springboot@v1.0.0
   #       with:
   #         SOURCE_DIR: "app/springboot-sample"
   #         JDK_VERSION: "17"
