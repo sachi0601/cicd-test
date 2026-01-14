@@ -39,7 +39,7 @@ jobs:
       contents: read
 
     env:
-      JOB_DEF_FAMILY: dev-cpo-sv-cpi-batchj01
+      JOB_DEF_FAMILY: dev-mizuno-sv-cpi-batchj01
 
     steps:
       - name: resolve oidc role arn
