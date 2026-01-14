@@ -1,0 +1,223 @@
+name: Dev Batch Deploy
+
+on:
+  # push:
+  #   branches:
+  #     - develop
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  #--------------------------------------------------------------------------------------------#
+  # integration
+  #--------------------------------------------------------------------------------------------#
+  # springboot-unit-test:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot unit test
+  #       uses: tmc-ccoe/torocicd-actions/unit-test/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # springboot-sonarqube-check:
+  #   continue-on-error: true
+  #   runs-on: toro-self-hosted-runner
+  #   steps:
+  #     - name: springboot sonarqube check
+  #       uses: tmc-ccoe/torocicd-actions/code-scan/sonarqube@v1.0.10
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         SONAR_HOST_URL: ${{ vars.PROD_SONAR_HOST_URL }}
+  #         SONAR_PROJECT: "torocicd-sample"
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # springboot-linter:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot linter
+  #       uses: tmc-ccoe/torocicd-actions/lint/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+
+  # springboot-documentation:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot documentation
+  #       uses: tmc-ccoe/torocicd-actions/documentation/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # springboot_scan-license:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot scan license
+  #       uses: tmc-ccoe/torocicd-actions/license-check/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # ==============================================================
+  # build
+  # ==============================================================
+  build-push:
+    # needs:
+    #   [
+    #     springboot-unit-test,
+    #     springboot-sonarqube-check,
+    #     springboot-linter,
+    #     springboot-documentation,
+    #     springboot_scan-license,
+    #   ]
+    
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      image_uri: ${{ steps.export.outputs.image_uri }}
+      short_sha: ${{ steps.export.outputs.short_sha }}
+      utc_ymdhms: ${{ steps.export.outputs.utc_ymdhms }}
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: get short commit hash & build datetime
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "utc_ymdhms=$(date --utc "+%Y%m%dT%H%M%SZ")" >> $GITHUB_ENV
+
+      - name: set up docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
+
+      - name: login to amazon ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: create image URI
+        run: |
+          # {env}-{repository_name}:<sha>-<datetime>
+          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-cpo-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> $GITHUB_ENV
+
+      # 1. ビルド & プッシュ
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/Dockerfile
+          push: true
+          provenance: false
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ env.NEW_IMAGE_URI }}
+
+      - name: export outputs
+        id: export
+        run: |
+          echo "image_uri=${{ env.NEW_IMAGE_URI }}" >> $GITHUB_OUTPUT
+          echo "short_sha=${{ env.short_sha }}" >> $GITHUB_OUTPUT
+          echo "utc_ymdhms=${{ env.utc_ymdhms }}" >> $GITHUB_OUTPUT
+
+  # ==============================================================
+  # image-scan
+  # ==============================================================
+  image-scan:
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
+
+      # 2. スキャン (共通アクション呼び出し)
+      - name: scan image
+        uses: ./.github/actions/image-scan
+        with:
+          image_uri: ${{ needs.build-push.outputs.image_uri }}
+          github_token: ${{ github.token }}
+
+  # ==============================================================
+  # deploy
+  # ==============================================================
+  deploy:
+    needs: image-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: install jq
+        run: sudo apt-get install -y jq
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
+
+      # 3. デプロイ (Job Definition更新)
+      - name: update aws batch job definition
+        env:
+          NEW_IMAGE: ${{ needs.build-push.outputs.image_uri }}
+          TARGET_FILE: gitops/dev/batch-job-def.json
+          JOB_ROLE: ${{ secrets.DEV_BATCH_JOB_ROLE_ARN }}
+          EXEC_ROLE: ${{ secrets.DEV_BATCH_JOB_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "Error: Job Definition Template not found: $TARGET_FILE"
+            exit 1
+          fi
+
+          jq --arg image "$NEW_IMAGE" \
+             --arg jobRole "$JOB_ROLE" \
+             --arg execRole "$EXEC_ROLE" \
+             '.containerProperties.image = $image
+              | .containerProperties.jobRoleArn = $jobRole
+              | .containerProperties.executionRoleArn = $execRole' \
+             "$TARGET_FILE" > dev-batch-job-def.json
+
+          aws batch register-job-definition \
+            --cli-input-json file://dev-batch-job-def.json
