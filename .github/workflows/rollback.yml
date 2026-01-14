@@ -94,6 +94,22 @@ jobs:
 
           echo "latest_arn=${LATEST_ARN}"   >> "$GITHUB_OUTPUT"
           echo "previous_arn=${PREV_ARN}" >> "$GITHUB_OUTPUT"
+      
+      - name: write job summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## AWS Batch Rollback Summary"
+            echo ""
+            echo "- Environment : **${{ inputs.environment }}**"
+            echo "- JobDefFamily: **${JOB_DEF_FAMILY}**"
+            echo ""
+            echo "### Job Definition ARNs"
+            echo "- Disabled (latest):"
+            echo "  - \`${{ steps.pick.outputs.latest_arn }}\`"
+            echo "- Active (previous):"
+            echo "  - \`${{ steps.pick.outputs.previous_arn }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: display messages
         run: echo "Rollback completed."
