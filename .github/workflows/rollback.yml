@@ -1,7 +1,7 @@
 name: AWS Batch Rollback
 run-name: Rollback ${{ inputs.environment }} by @${{ github.actor }}
 
-"on":
+on:
   workflow_dispatch:
     inputs:
       environment:
@@ -30,7 +30,7 @@ jobs:
   rollback:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [approve]
+    needs: approve
 
     permissions:
       id-token: write

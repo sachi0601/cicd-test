@@ -1,9 +1,9 @@
 name: Dev Batch Deploy
 
 on:
-  push:
-    branches:
-      - main
+#   push:
+#     branches:
+#       - main
   workflow_dispatch:
 
 concurrency:
@@ -174,12 +174,12 @@ jobs:
   # deploy
   # ==============================================================
   deploy:
-    needs: 
+    needs:
       [
         build-push,
-        image-scan
+        image-scan,
       ]
-    
+
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
