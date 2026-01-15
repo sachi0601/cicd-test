@@ -1,5 +1,5 @@
 {
-  "jobDefinitionName": "dev-mizuno-sv-cpi-batchjd01",
+  "jobDefinitionName": "dev-mizuno-sv-cpi-batchjd02",
   "type": "container",
   "platformCapabilities": ["FARGATE"],
   "retryStrategy": {
