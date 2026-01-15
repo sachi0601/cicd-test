@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "app/**"
-      - "gitops/**"
+      - "gitops/dev/**"
   workflow_dispatch:
 
 concurrency:
