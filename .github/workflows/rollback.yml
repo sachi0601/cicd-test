@@ -1,7 +1,7 @@
 name: AWS Batch Rollback
 run-name: Rollback ${{ inputs.environment }} by @${{ github.actor }}
 
-"on":
+on:
   workflow_dispatch:
     inputs:
       environment:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   # ==============================================================
-  # approve (devは即通過 / stage・prodは承認待ち)
+  # approve
   # ==============================================================
   approve:
     runs-on: ubuntu-latest
@@ -30,14 +30,14 @@ jobs:
   rollback:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [approve]
+    needs: approve
 
     permissions:
       id-token: write
       contents: read
 
     env:
-      JOB_DEF_FAMILY: ${{ inputs.environment }}-cpo-sv-cpi-batchjd01
+      JOB_DEF_FAMILY: ${{ inputs.environment }}-mizuno-sv-cpi-batchjd01
 
     steps:
       - name: resolve oidc role arn (fixed mapping)
@@ -65,7 +65,7 @@ jobs:
           role-to-assume: ${{ env.ROLE_ARN }}
 
       - name: rollback job definition (disable latest)
-        id: pick
+        id: rollback
         shell: bash
         run: |
           set -euo pipefail
@@ -92,9 +92,11 @@ jobs:
 
           aws batch deregister-job-definition --job-definition "${LATEST_ARN}"
 
-          echo "latest_arn=${LATEST_ARN}"   >> "$GITHUB_OUTPUT"
-          echo "previous_arn=${PREV_ARN}" >> "$GITHUB_OUTPUT"
-      
+          {
+            echo "latest_arn=${LATEST_ARN}"
+            echo "previous_arn=${PREV_ARN}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: write job summary
         if: ${{ always() }}
         run: |
@@ -106,10 +108,7 @@ jobs:
             echo ""
             echo "### Job Definition ARNs"
             echo "- Disabled (latest):"
-            echo "  - \`${{ steps.pick.outputs.latest_arn }}\`"
+            echo "  - \`${{ steps.rollback.outputs.latest_arn }}\`"
             echo "- Active (previous):"
-            echo "  - \`${{ steps.pick.outputs.previous_arn }}\`"
+            echo "  - \`${{ steps.rollback.outputs.previous_arn }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: display messages
-        run: echo "Rollback completed."
