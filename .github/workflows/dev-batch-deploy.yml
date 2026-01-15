@@ -100,8 +100,8 @@ jobs:
 
       - name: get short commit hash & build datetime
         run: |
-          echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "utc_ymdhms=$(date --utc "+%Y%m%dT%H%M%SZ")" >> $GITHUB_ENV
+          echo "short_sha=${GITHUB_SHA::7}" >> "${GITHUB_ENV}"
+          echo "utc_ymdhms=$(date --utc "+%Y%m%dT%H%M%SZ")" >> "${GITHUB_ENV}"
 
       - name: set up docker buildx
         uses: docker/setup-buildx-action@v3
@@ -119,7 +119,7 @@ jobs:
       - name: create image URI
         run: |
           # {env}-{repository_name}:<sha>-<datetime>
-          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-mizuno-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> $GITHUB_ENV
+          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-mizuno-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> "${GITHUB_ENV}"
 
       # 1. ビルド & プッシュ
       - name: build and push
@@ -137,9 +137,11 @@ jobs:
       - name: export outputs
         id: export
         run: |
-          echo "image_uri=${{ env.NEW_IMAGE_URI }}" >> $GITHUB_OUTPUT
-          echo "short_sha=${{ env.short_sha }}" >> $GITHUB_OUTPUT
-          echo "utc_ymdhms=${{ env.utc_ymdhms }}" >> $GITHUB_OUTPUT
+          {
+            echo "image_uri=${{ env.NEW_IMAGE_URI }}"
+            echo "short_sha=${{ env.short_sha }}"
+            echo "utc_ymdhms=${{ env.utc_ymdhms }}"
+          } >> "${GITHUB_OUTPUT}"
 
   # ==============================================================
   # image-scan
