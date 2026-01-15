@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  #--------------------------------------------------------------------------------------------#
+  # ==============================================================
   # integration
-  #--------------------------------------------------------------------------------------------#
+  # ==============================================================
   # springboot-unit-test:
   #   continue-on-error: true
   #   runs-on: ubuntu-latest
@@ -101,7 +101,7 @@ jobs:
       - name: get short commit hash & build datetime
         run: |
           echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          echo "utc_ymdhms=$(date --utc "+%Y%m%dT%H%M%SZ")" >> "$GITHUB_ENV"
+          echo "utc_ymdhms=$(date --utc '+%Y%m%dT%H%M%SZ')" >> "$GITHUB_ENV"
 
       - name: set up docker buildx
         uses: docker/setup-buildx-action@v3
