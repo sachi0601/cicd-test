@@ -10,7 +10,7 @@ public class DemoApplication implements CommandLineRunner {
 
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(DemoApplication.class);
-        app.setBannerMode(Banner.Mode.OFF); // バナーを出力しない
+        app.setBannerMode(Banner.Mode.OFF); // バナー出力しない
         app.run(args);
     }
 
