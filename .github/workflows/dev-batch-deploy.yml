@@ -3,7 +3,7 @@ name: Dev Batch Deploy
 on:
   push:
     branches:
-      - main
+      - develop
     paths:
       - "app/**"
       - "gitops/dev/**"
@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: deploy-dev
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # ==============================================================
@@ -93,20 +93,15 @@ jobs:
       contents: read
 
     outputs:
-      image_uri: ${{ steps.export.outputs.image_uri }}
-      short_sha: ${{ steps.export.outputs.short_sha }}
-      utc_ymdhms: ${{ steps.export.outputs.utc_ymdhms }}
+      image_uri: ${{ steps.generate_image_tag.outputs.image_uri }}
+      short_sha: ${{ steps.generate_image_tag.outputs.short_sha }}
+      utc_ymdhms: ${{ steps.generate_image_tag.outputs.utc_ymdhms }}
 
     steps:
       - name: checkout repository
         uses: actions/checkout@v4
-
-      - name: get short commit hash & build datetime
-        run: |
-          {
-            echo "short_sha=${GITHUB_SHA::7}"
-            echo "utc_ymdhms=$(date --utc '+%Y%m%dT%H%M%SZ')"
-          } >> "$GITHUB_ENV"
+        with:
+          ref: develop
 
       - name: set up docker buildx
         uses: docker/setup-buildx-action@v3
@@ -117,16 +112,29 @@ jobs:
           aws-region: ap-northeast-1
           role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
 
-      - name: login to amazon ecr
+      - name: login amazon ecr
         uses: aws-actions/amazon-ecr-login@v2
-        id: login-ecr
+        id: login_amazon_ecr
 
-      - name: create image URI
+      - name: generate image tag
+        id: generate_image_tag
+        shell: bash
         run: |
-          # {env}-{repository_name}:<sha>-<datetime>
-          echo "NEW_IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/dev-mizuno-sv-cpi-ecr01:${{ env.short_sha }}-${{ env.utc_ymdhms }}" >> "$GITHUB_ENV"
+          set -euo pipefail
 
-      # 1. ビルド & プッシュ
+          short_sha="${GITHUB_SHA::7}"
+          utc_ymdhms="$(date --utc '+%Y%m%dT%H%M%SZ')"
+
+          # {env}-{repository_name}:<sha>-<datetime>
+          image_uri="${{ steps.login_amazon_ecr.outputs.registry }}/dev-mizuno-sv-cpi-ecr01:${short_sha}-${utc_ymdhms}"
+
+          {
+            echo "short_sha=${short_sha}"
+            echo "utc_ymdhms=${utc_ymdhms}"
+            echo "image_uri=${image_uri}"
+          } >> "$GITHUB_OUTPUT"
+
+      # ビルド & プッシュ
       - name: build and push
         uses: docker/build-push-action@v6
         with:
@@ -137,16 +145,7 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: ${{ env.NEW_IMAGE_URI }}
-
-      - name: export outputs
-        id: export
-        run: |
-          {
-            echo "image_uri=${{ env.NEW_IMAGE_URI }}"
-            echo "short_sha=${{ env.short_sha }}"
-            echo "utc_ymdhms=${{ env.utc_ymdhms }}"
-          } >> "$GITHUB_OUTPUT"
+          tags: ${{ steps.generate_image_tag.outputs.image_uri }}
 
   # ==============================================================
   # image-scan
@@ -163,6 +162,8 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: develop
 
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -170,7 +171,7 @@ jobs:
           aws-region: ap-northeast-1
           role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
 
-      # 2. スキャン (共通アクション呼び出し)
+      # スキャン (共通アクション呼び出し)
       - name: scan image
         uses: ./.github/actions/image-scan
         with:
@@ -197,8 +198,11 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: develop
 
       - name: install jq
+        shell: bash
         run: sudo apt-get install -y jq
 
       - name: configure aws credentials
@@ -207,8 +211,9 @@ jobs:
           aws-region: ap-northeast-1
           role-to-assume: ${{ secrets.DEV_OIDC_ROLE_ARN }}
 
-      # 3. デプロイ (Job Definition更新)
+      # デプロイ (Job Definition更新)
       - name: update aws batch job definition
+        shell: bash
         env:
           NEW_IMAGE: ${{ needs.build-push.outputs.image_uri }}
           TARGET_FILE: gitops/dev/batch-job-def.json

@@ -20,9 +20,9 @@ jobs:
   # ==============================================================
   approve:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.environment }} # stage/prod: Required reviewers
     steps:
-      - run: echo "Approved (or not required) for ${{ inputs.environment }}. Start rollback."
+      - run: echo "承認されました。${{ inputs.environment }}環境のロールバックを開始します。"
 
   # ==============================================================
   # rollback
@@ -41,6 +41,7 @@ jobs:
 
     steps:
       - name: resolve oidc role arn (fixed mapping)
+        id: resolve_role
         shell: bash
         run: |
           set -euo pipefail
@@ -56,34 +57,35 @@ jobs:
             exit 1
           fi
 
-          echo "ROLE_ARN=$ROLE_ARN" >> "$GITHUB_ENV"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
 
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-northeast-1
-          role-to-assume: ${{ env.ROLE_ARN }}
-
+          role-to-assume: ${{ steps.resolve_role.outputs.role_arn }}
+        
+        # ロールバック
       - name: rollback job definition
-        id: rollback
+        id: rollback_jobdef
         shell: bash
         run: |
           set -euo pipefail
 
-          ARNS="$(aws batch describe-job-definitions \
+          JOB_DEF_ARNS="$(aws batch describe-job-definitions \
             --job-definition-name "${JOB_DEF_FAMILY}" \
             --status ACTIVE \
             --query 'jobDefinitions | sort_by(@, &revision) | reverse(@)[:2].jobDefinitionArn' \
-            --output text)"
+            --output text | xargs)"
 
-          COUNT="$(printf "%s" "${ARNS}" | wc -w | tr -d ' ')"
-          if [ "${COUNT}" -lt 2 ]; then
+          JOB_DEF_COUNT="$(printf "%s" "${JOB_DEF_ARNS}" | wc -w | tr -d ' ')"
+          if [ "${JOB_DEF_COUNT}" -lt 2 ]; then
             echo "ERROR: Less than 2 ACTIVE job definitions. Rollback not possible."
             echo "JobDefinitionFamily: ${JOB_DEF_FAMILY}"
             exit 1
           fi
 
-          read -r LATEST_ARN PREV_ARN <<< "${ARNS}"
+          read -r LATEST_ARN PREV_ARN <<< "${JOB_DEF_ARNS}"
 
           echo "Environment     : ${{ inputs.environment }}"
           echo "JobDef Family   : ${JOB_DEF_FAMILY}"
@@ -97,9 +99,13 @@ jobs:
             echo "previous_arn=${PREV_ARN}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: write job summary
+      - name: display job summary
         if: ${{ always() }}
+        shell: bash
         run: |
+          latest="${{ steps.rollback_jobdef.outputs.latest_arn }}"
+          prev="${{ steps.rollback_jobdef.outputs.previous_arn }}"
+
           {
             echo "## AWS Batch Rollback Summary"
             echo ""
@@ -108,7 +114,7 @@ jobs:
             echo ""
             echo "### Job Definition ARNs"
             echo "- Disabled (latest):"
-            echo "  - \`${{ steps.rollback.outputs.latest_arn }}\`"
+            echo "  - \`${latest:-N/A}\`"
             echo "- Active (previous):"
-            echo "  - \`${{ steps.rollback.outputs.previous_arn }}\`"
+            echo "  - \`${prev:-N/A}\`"
           } >> "$GITHUB_STEP_SUMMARY"
