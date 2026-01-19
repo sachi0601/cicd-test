@@ -37,7 +37,7 @@ jobs:
       contents: read
 
     env:
-      JOB_DEF_FAMILY: ${{ inputs.environment }}-mizuno-sv-cpi-batchjd01
+      JOB_DEF_FAMILY: ${{ inputs.environment }}-mizuno-sv-cpi-batchjd01-test
 
     steps:
       - name: resolve oidc role arn (fixed mapping)
