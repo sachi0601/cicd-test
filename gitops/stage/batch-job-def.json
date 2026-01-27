@@ -1,0 +1,40 @@
+{
+  "jobDefinitionName": "stage-mizuno-sv-cpi-batchjd01-test",
+  "type": "container",
+  "platformCapabilities": ["FARGATE"],
+  "retryStrategy": {
+    "attempts": 1
+  },
+  "timeout": {
+    "attemptDurationSeconds": 10800
+  },
+  "containerProperties": {
+    "image": "000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/stage-sample-app:PLACEHOLDER",
+    "jobRoleArn": "arn:aws:iam::000000000000:role/PLACEHOLDER",
+    "executionRoleArn": "arn:aws:iam::000000000000:role/PLACEHOLDER",
+    "resourceRequirements": [
+      { "type": "VCPU", "value": "2" },
+      { "type": "MEMORY", "value": "4096" }
+    ],
+    "readonlyRootFilesystem": true,
+    "privileged": false,
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/aws/batch/job/stage-mizuno-sv-cpi-batchj01"
+      }
+    },
+    "fargatePlatformConfiguration": {
+      "platformVersion": "LATEST"
+    },
+    "ephemeralStorage": {
+      "sizeInGiB": 120
+    },
+    "runtimePlatform": {
+      "operatingSystemFamily": "LINUX",
+      "cpuArchitecture": "X86_64"
+    }
+  },
+  "propagateTags": true
+  
+}
