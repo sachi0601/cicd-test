@@ -185,6 +185,7 @@ jobs:
         with:
           image_uri: ${{ needs.stage-build-push.outputs.image_uri }}
           github_token: ${{ github.token }}
+          env_prefix: stage
 
   # ==============================================================
   # stage-deploy
@@ -350,6 +351,7 @@ jobs:
         with:
           image_uri: ${{ needs.promote.outputs.image_uri }}
           github_token: ${{ github.token }}
+          env_prefix: prod
 
   # ==============================================================
   # prod-deploy
