@@ -1,0 +1,407 @@
+name: Stage Prod Batch Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "gitops/stage/**"
+      - "gitops/prod/**"
+
+concurrency:
+  group: deploy-stage-prod
+  cancel-in-progress: false
+
+jobs:
+  # ==============================================================
+  # integration
+  # ==============================================================
+  # springboot-unit-test:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot unit test
+  #       uses: unit-test/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # springboot-sonarqube-check:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot sonarqube check
+  #       uses: code-scan/sonarqube@v1.0.10
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         SONAR_HOST_URL: ${{ vars.PROD_SONAR_HOST_URL }}
+  #         SONAR_PROJECT: "torocicd-sample"
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # springboot-linter:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot linter
+  #       uses: lint/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+
+  # springboot-documentation:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot documentation
+  #       uses: documentation/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # springboot_scan-license:
+  #   continue-on-error: true
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: springboot scan license
+  #       uses: license-check/springboot@v1.0.0
+  #       with:
+  #         SOURCE_DIR: "app/springboot-sample"
+  #         JDK_VERSION: "17"
+  #         DISTRIBUTION: "temurin"
+
+  # ==============================================================
+  # stage-approve
+  # ==============================================================
+  stage-approve:
+    # needs:
+    #   [
+    #     springboot-unit-test,
+    #     springboot-sonarqube-check,
+    #     springboot-linter,
+    #     springboot-documentation,
+    #     springboot_scan-license,
+    #   ]
+
+    runs-on: ubuntu-latest
+    environment: stage # Required reviewers
+    steps:
+      - name: approval job complete
+        run: echo "検証環境へのデプロイが承認されました。後続のJobが実行されます。"
+
+  # ==============================================================
+  # stage-build
+  # ==============================================================
+  stage-build-push:
+    needs: stage-approve
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      image_uri: ${{ steps.generate_image_tag.outputs.image_uri }}
+      short_sha: ${{ steps.generate_image_tag.outputs.short_sha }}
+      utc_ymdhms: ${{ steps.generate_image_tag.outputs.utc_ymdhms }}
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: set up docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
+
+      - name: login amazon ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login_amazon_ecr
+
+      - name: generate image tag
+        id: generate_image_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="${GITHUB_SHA::7}"
+          utc_ymdhms="$(date --utc '+%Y%m%dT%H%M%SZ')"
+
+          # {env}-{repository_name}:<sha>-<datetime>
+          image_uri="${{ steps.login_amazon_ecr.outputs.registry }}/stage-mizuno-sv-cpi-ecr01:${short_sha}-${utc_ymdhms}"
+
+          {
+            echo "short_sha=${short_sha}"
+            echo "utc_ymdhms=${utc_ymdhms}"
+            echo "image_uri=${image_uri}"
+          } >> "$GITHUB_OUTPUT"
+
+      # ビルド & プッシュ
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/Dockerfile
+          push: true
+          provenance: false
+          platforms: linux/amd64
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+          tags: ${{ steps.generate_image_tag.outputs.image_uri }}
+
+  # ==============================================================
+  # stage-image-scan
+  # ==============================================================
+  stage-image-scan:
+    needs: stage-build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
+
+      # スキャン (共通アクション呼び出し)
+      - name: scan image
+        uses: ./.github/actions/image-scan
+        with:
+          image_uri: ${{ needs.stage-build-push.outputs.image_uri }}
+          github_token: ${{ github.token }}
+
+  # ==============================================================
+  # stage-deploy
+  # ==============================================================
+  stage-deploy:
+    needs:
+      [
+        stage-build-push,
+        stage-image-scan,
+      ]
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: install jq
+        shell: bash
+        run: sudo apt-get install -y jq
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
+
+      # デプロイ (Job Definition更新)
+      - name: update aws batch job definition
+        shell: bash
+        env:
+          NEW_IMAGE: ${{ needs.stage-build-push.outputs.image_uri }}
+          TARGET_FILE: gitops/stage/batch-job-def.json
+          JOB_ROLE: ${{ secrets.STAGE_BATCH_JOB_ROLE_ARN }}
+          EXEC_ROLE: ${{ secrets.STAGE_BATCH_JOB_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "Error: Job Definition Template not found: $TARGET_FILE"
+            exit 1
+          fi
+
+          jq --arg image "$NEW_IMAGE" \
+             --arg jobRole "$JOB_ROLE" \
+             --arg execRole "$EXEC_ROLE" \
+             '.containerProperties.image = $image
+              | .containerProperties.jobRoleArn = $jobRole
+              | .containerProperties.executionRoleArn = $execRole' \
+             "$TARGET_FILE" > stage-batch-job-def.json
+
+          aws batch register-job-definition \
+            --cli-input-json file://stage-batch-job-def.json
+
+  # ==============================================================
+  # prod-approve
+  # ==============================================================
+  prod-approve:
+    needs: stage-deploy
+
+    runs-on: ubuntu-latest
+    environment: prod # Required reviewers
+    steps:
+      - name: approval job complete
+        run: echo "号口環境へのデプロイが承認されました。後続のJobが実行されます。"
+
+  # ==============================================================
+  # promote
+  # ==============================================================
+  promote:
+    needs: 
+      [
+        stage-build-push,
+        prod-approve,
+      ]
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image_uri: ${{ steps.generate_image_tag_prod.outputs.image_uri }}
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials (stage)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
+
+      - name: login amazon ecr (stage)
+        uses: aws-actions/amazon-ecr-login@v2
+
+        # 検証アカウントからPull
+      - name: pull staging image
+        run: docker pull ${{ needs.stage-build-push.outputs.image_uri }}
+
+      - name: configure aws credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+
+      - name: login amazon ecr (prod)
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login_amazon_ecr_prod
+
+      - name: generate image tag (prod)
+        id: generate_image_tag_prod
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 前段のジョブから値を引き継ぎ
+          short_sha="${{ needs.stage-build-push.outputs.short_sha }}"
+          utc_ymdhms="${{ needs.stage-build-push.outputs.utc_ymdhms }}"
+          
+          # 本番用レジストリURLを使用してタグを生成
+          image_uri="${{ steps.login_amazon_ecr_prod.outputs.registry }}/prod-mizuno-sv-cpi-ecr01:${short_sha}-${utc_ymdhms}"
+          
+          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+          echo "NEW_IMAGE_URI=${image_uri}" >> "$GITHUB_ENV"
+
+        # 本番アカウントへPush
+      - name: push image to prod
+        run: |
+          docker tag ${{ needs.stage-build-push.outputs.image_uri }} ${{ env.NEW_IMAGE_URI }}
+          docker push ${{ env.NEW_IMAGE_URI }}
+
+  # ==============================================================
+  # prod-image-scan
+  # ==============================================================
+  prod-image-scan:
+    needs: promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+
+      # スキャン (再検査)
+      - name: scan image
+        uses: ./.github/actions/image-scan
+        with:
+          image_uri: ${{ needs.promote.outputs.image_uri }}
+          github_token: ${{ github.token }}
+
+  # ==============================================================
+  # prod-deploy
+  # ==============================================================
+  prod-deploy:
+    needs:
+      - promote
+      - prod-image-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: install jq
+        shell: bash
+        run: sudo apt-get install -y jq
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+
+      # デプロイ (Job Definition更新)
+      - name: update aws batch job definition (prod)
+        shell: bash
+        env:
+          NEW_IMAGE: ${{ needs.promote.outputs.image_uri }}
+          TARGET_FILE: gitops/prod/batch-job-def.json
+          JOB_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
+          EXEC_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "Error: Job Definition Template not found: $TARGET_FILE"
+            exit 1
+          fi
+
+          jq --arg image "$NEW_IMAGE" \
+             --arg jobRole "$JOB_ROLE" \
+             --arg execRole "$EXEC_ROLE" \
+             '.containerProperties.image = $image
+              | .containerProperties.jobRoleArn = $jobRole
+              | .containerProperties.executionRoleArn = $execRole' \
+             "$TARGET_FILE" > prod-batch-job-def.json
+
+          aws batch register-job-definition \
+            --cli-input-json file://prod-batch-job-def.json
