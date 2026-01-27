@@ -185,7 +185,7 @@ jobs:
         with:
           image_uri: ${{ needs.stage-build-push.outputs.image_uri }}
           github_token: ${{ github.token }}
-          env_prefix: ${{ vars.STAGE_ENV_PREFIX }}"
+          env_prefix: ${{ vars.STAGE_ENV_PREFIX }}
 
   # ==============================================================
   # stage-deploy
