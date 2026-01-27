@@ -12,10 +12,15 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Set Trivy cache dir (workspace local)
+      shell: bash
+      run: |
+        echo "TRIVY_CACHE_DIR=${GITHUB_WORKSPACE}/.cache/trivy" >> "$GITHUB_ENV"
+
     - name: Cache Trivy
       uses: actions/cache@v4
       with:
-        path: ~/.cache/trivy
+        path: ${{ env.TRIVY_CACHE_DIR }}
         key: ${{ runner.os }}-trivy
         restore-keys: |
           ${{ runner.os }}-trivy

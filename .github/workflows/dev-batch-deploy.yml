@@ -1,12 +1,12 @@
 name: Dev Batch Deploy
 
 on:
-  push:
-    branches:
-      - develop
-    paths:
-      - "app/**"
-      - "gitops/dev/**"
+  # push:
+  #   branches:
+  #     - develop
+  #   paths:
+  #     - "app/**"
+  #     - "gitops/dev/**"
   workflow_dispatch:
 
 concurrency:
