@@ -185,7 +185,7 @@ jobs:
         with:
           image_uri: ${{ needs.stage-build-push.outputs.image_uri }}
           github_token: ${{ github.token }}
-          env_prefix: stage
+          env_prefix: ${{ vars.STAGE_ENV_PREFIX }}"
 
   # ==============================================================
   # stage-deploy
@@ -245,165 +245,165 @@ jobs:
           aws batch register-job-definition \
             --cli-input-json file://stage-batch-job-def.json
 
-  # ==============================================================
-  # prod-approve
-  # ==============================================================
-  prod-approve:
-    needs: stage-deploy
+  # # ==============================================================
+  # # prod-approve
+  # # ==============================================================
+  # prod-approve:
+  #   needs: stage-deploy
 
-    runs-on: ubuntu-latest
-    environment: prod # Required reviewers
-    steps:
-      - name: approval job complete
-        run: echo "号口環境へのデプロイが承認されました。後続のJobが実行されます。"
+  #   runs-on: ubuntu-latest
+  #   environment: prod # Required reviewers
+  #   steps:
+  #     - name: approval job complete
+  #       run: echo "号口環境へのデプロイが承認されました。後続のJobが実行されます。"
 
-  # ==============================================================
-  # promote
-  # ==============================================================
-  promote:
-    needs: 
-      [
-        stage-build-push,
-        prod-approve,
-      ]
+  # # ==============================================================
+  # # promote
+  # # ==============================================================
+  # promote:
+  #   needs: 
+  #     [
+  #       stage-build-push,
+  #       prod-approve,
+  #     ]
 
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
-    outputs:
-      image_uri: ${{ steps.generate_image_tag_prod.outputs.image_uri }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   outputs:
+  #     image_uri: ${{ steps.generate_image_tag_prod.outputs.image_uri }}
 
-    steps:
-      - name: checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: configure aws credentials (stage)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-1
-          role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
+  #     - name: configure aws credentials (stage)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-region: ap-northeast-1
+  #         role-to-assume: ${{ secrets.STAGE_OIDC_ROLE_ARN }}
 
-      - name: login amazon ecr (stage)
-        uses: aws-actions/amazon-ecr-login@v2
+  #     - name: login amazon ecr (stage)
+  #       uses: aws-actions/amazon-ecr-login@v2
 
-        # 検証アカウントからPull
-      - name: pull staging image
-        run: docker pull ${{ needs.stage-build-push.outputs.image_uri }}
+  #       # 検証アカウントからPull
+  #     - name: pull staging image
+  #       run: docker pull ${{ needs.stage-build-push.outputs.image_uri }}
 
-      - name: configure aws credentials (prod)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-1
-          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+  #     - name: configure aws credentials (prod)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-region: ap-northeast-1
+  #         role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
 
-      - name: login amazon ecr (prod)
-        uses: aws-actions/amazon-ecr-login@v2
-        id: login_amazon_ecr_prod
+  #     - name: login amazon ecr (prod)
+  #       uses: aws-actions/amazon-ecr-login@v2
+  #       id: login_amazon_ecr_prod
 
-      - name: generate image tag (prod)
-        id: generate_image_tag_prod
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 前段のジョブから値を引き継ぎ
-          short_sha="${{ needs.stage-build-push.outputs.short_sha }}"
-          utc_ymdhms="${{ needs.stage-build-push.outputs.utc_ymdhms }}"
+  #     - name: generate image tag (prod)
+  #       id: generate_image_tag_prod
+  #       shell: bash
+  #       run: |
+  #         set -euo pipefail
+  #         # 前段のジョブから値を引き継ぎ
+  #         short_sha="${{ needs.stage-build-push.outputs.short_sha }}"
+  #         utc_ymdhms="${{ needs.stage-build-push.outputs.utc_ymdhms }}"
           
-          # 本番用レジストリURLを使用してタグを生成
-          image_uri="${{ steps.login_amazon_ecr_prod.outputs.registry }}/prod-mizuno-sv-cpi-ecr01:${short_sha}-${utc_ymdhms}"
+  #         # 本番用レジストリURLを使用してタグを生成
+  #         image_uri="${{ steps.login_amazon_ecr_prod.outputs.registry }}/prod-mizuno-sv-cpi-ecr01:${short_sha}-${utc_ymdhms}"
           
-          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
-          echo "NEW_IMAGE_URI=${image_uri}" >> "$GITHUB_ENV"
+  #         echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+  #         echo "NEW_IMAGE_URI=${image_uri}" >> "$GITHUB_ENV"
 
-        # 本番アカウントへPush
-      - name: push image to prod
-        run: |
-          docker tag ${{ needs.stage-build-push.outputs.image_uri }} ${{ env.NEW_IMAGE_URI }}
-          docker push ${{ env.NEW_IMAGE_URI }}
+  #       # 本番アカウントへPush
+  #     - name: push image to prod
+  #       run: |
+  #         docker tag ${{ needs.stage-build-push.outputs.image_uri }} ${{ env.NEW_IMAGE_URI }}
+  #         docker push ${{ env.NEW_IMAGE_URI }}
 
-  # ==============================================================
-  # prod-image-scan
-  # ==============================================================
-  prod-image-scan:
-    needs: promote
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  # # ==============================================================
+  # # prod-image-scan
+  # # ==============================================================
+  # prod-image-scan:
+  #   needs: promote
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
 
-    permissions:
-      id-token: write
-      contents: read
+  #   permissions:
+  #     id-token: write
+  #     contents: read
 
-    steps:
-      - name: checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-1
-          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+  #     - name: configure aws credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-region: ap-northeast-1
+  #         role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
 
-      # スキャン (再検査)
-      - name: scan image
-        uses: ./.github/actions/image-scan
-        with:
-          image_uri: ${{ needs.promote.outputs.image_uri }}
-          github_token: ${{ github.token }}
-          env_prefix: prod
+  #     # スキャン (再検査)
+  #     - name: scan image
+  #       uses: ./.github/actions/image-scan
+  #       with:
+  #         image_uri: ${{ needs.promote.outputs.image_uri }}
+  #         github_token: ${{ github.token }}
+  #         env_prefix: ${{ vars.PROD_ENV_PREFIX }}"
 
-  # ==============================================================
-  # prod-deploy
-  # ==============================================================
-  prod-deploy:
-    needs:
-      - promote
-      - prod-image-scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  # # ==============================================================
+  # # prod-deploy
+  # # ==============================================================
+  # prod-deploy:
+  #   needs:
+  #     - promote
+  #     - prod-image-scan
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
 
-    permissions:
-      id-token: write
-      contents: read
+  #   permissions:
+  #     id-token: write
+  #     contents: read
 
-    steps:
-      - name: checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: install jq
-        shell: bash
-        run: sudo apt-get install -y jq
+  #     - name: install jq
+  #       shell: bash
+  #       run: sudo apt-get install -y jq
 
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-1
-          role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
+  #     - name: configure aws credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-region: ap-northeast-1
+  #         role-to-assume: ${{ secrets.PROD_OIDC_ROLE_ARN }}
 
-      # デプロイ (Job Definition更新)
-      - name: update aws batch job definition (prod)
-        shell: bash
-        env:
-          NEW_IMAGE: ${{ needs.promote.outputs.image_uri }}
-          TARGET_FILE: gitops/prod/batch-job-def.json
-          JOB_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
-          EXEC_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
-        run: |
-          set -euo pipefail
+  #     # デプロイ (Job Definition更新)
+  #     - name: update aws batch job definition (prod)
+  #       shell: bash
+  #       env:
+  #         NEW_IMAGE: ${{ needs.promote.outputs.image_uri }}
+  #         TARGET_FILE: gitops/prod/batch-job-def.json
+  #         JOB_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
+  #         EXEC_ROLE: ${{ secrets.PROD_BATCH_JOB_ROLE_ARN }}
+  #       run: |
+  #         set -euo pipefail
 
-          if [ ! -f "$TARGET_FILE" ]; then
-            echo "Error: Job Definition Template not found: $TARGET_FILE"
-            exit 1
-          fi
+  #         if [ ! -f "$TARGET_FILE" ]; then
+  #           echo "Error: Job Definition Template not found: $TARGET_FILE"
+  #           exit 1
+  #         fi
 
-          jq --arg image "$NEW_IMAGE" \
-             --arg jobRole "$JOB_ROLE" \
-             --arg execRole "$EXEC_ROLE" \
-             '.containerProperties.image = $image
-              | .containerProperties.jobRoleArn = $jobRole
-              | .containerProperties.executionRoleArn = $execRole' \
-             "$TARGET_FILE" > prod-batch-job-def.json
+  #         jq --arg image "$NEW_IMAGE" \
+  #            --arg jobRole "$JOB_ROLE" \
+  #            --arg execRole "$EXEC_ROLE" \
+  #            '.containerProperties.image = $image
+  #             | .containerProperties.jobRoleArn = $jobRole
+  #             | .containerProperties.executionRoleArn = $execRole' \
+  #            "$TARGET_FILE" > prod-batch-job-def.json
 
-          aws batch register-job-definition \
-            --cli-input-json file://prod-batch-job-def.json
+  #         aws batch register-job-definition \
+  #           --cli-input-json file://prod-batch-job-def.json
