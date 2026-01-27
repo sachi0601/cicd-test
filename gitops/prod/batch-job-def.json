@@ -35,6 +35,6 @@
       "cpuArchitecture": "X86_64"
     }
   },
-  "propagateTags": true
+  "propagateTags": false
   
 }

@@ -8,6 +8,9 @@ inputs:
   github_token:
     required: false
     description: "github_token"
+  env_prefix:
+    required: false
+    description: "スキャン対象の環境"
 
 runs:
   using: "composite"
@@ -211,6 +214,6 @@ runs:
       uses: actions/upload-artifact@v4
       if: always() # ブロックされてもレポート確認
       with:
-        name: artifact-image-scan
+        name: artifact-image-scan-${{ inputs.env_prefix }}
         path: ./trivy-report/
         retention-days: 1
