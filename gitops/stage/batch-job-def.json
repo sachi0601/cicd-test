@@ -1,5 +1,5 @@
 {
-  "jobDefinitionName": "stage-mizuno-sv-cpi-batchjd01-test",
+  "jobDefinitionName": "stage-mizuno-sv-cpi-batchjd01",
   "type": "container",
   "platformCapabilities": ["FARGATE"],
   "retryStrategy": {
